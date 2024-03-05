@@ -75,6 +75,9 @@ efficient and user-friendly.
 
 ## Things i would choose in a real project
 
+### Pagination with RemoteMediator
+I would include pagination with RemoteMediator to fetch data from the network and store it in the database. But i didn't include it in this project because the API doesn't support pagination and doesn't have a lot of data.
+
 ### Modularized Architecture
 
 - Emphasizing test-driven development, we aim for a robustly written codebase, supplemented by comprehensive unit and UI
@@ -96,6 +99,3 @@ to stability, reliability, and continuous improvement.**
 - Streamlines the build, test, and release process, ensuring consistent quality and faster deployment.
 - Set up a CI/CD pipeline (e.g., GitHub Actions, GitLab CI/CD) for automated testing, building, and deployment to app
   stores, including beta distribution channels for testing.
-
-
-
