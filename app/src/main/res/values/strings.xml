@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">Dogify</string>
+    <string name="breed_image">breed image</string>
+    <string name="an_error_occurred">An error occurred</string>
+    <string name="retry">Retry</string>
+    <string name="dismiss">Dismiss</string>
 </resources>
