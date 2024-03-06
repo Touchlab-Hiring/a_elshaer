@@ -63,14 +63,6 @@ efficient and user-friendly.
 - Enables offline capabilities and performance improvements through data caching.
 - Utilize Room for data persistence, implementing DAOs for data access and manipulation
 
-## 📃 Pagination and Data Fetching
-
-### 📚 Paging Library
-
-- Why Use Paging? It efficiently handles data loading and ensures smooth scrolling, even with large datasets.
-- We use the Paging 3 library for pagination, combining local (Room) and remote (Retrofit) data sources with the help of
-  RemoteMediator for an optimized data fetch strategy.
-
 ## 🎨 UI/UX Enhancements
 
 - Implementing Image Loading with Glide for quick and efficient image rendering.
