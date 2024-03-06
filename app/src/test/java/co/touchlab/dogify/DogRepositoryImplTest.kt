@@ -12,6 +12,7 @@ import co.touchlab.dogify.data.remote.model.ImageResult
 import co.touchlab.dogify.data.remote.model.toDogBreed
 import co.touchlab.dogify.model.DogBreed
 import io.mockk.MockKAnnotations
+import io.mockk.Ordering
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.impl.annotations.MockK
@@ -63,36 +64,19 @@ class DogRepositoryImplTest {
     }
 
     @Test
-    fun `refreshDogBreeds fetches from remote and updates local database`() =
-        runTest(dispatcherProvider.io()) {
-            val dogBreedsResponse = DogBreedResponse(listOf("affenpinscher"), "success")
-            val response: Response<DogBreedResponse> = Response.success(dogBreedsResponse)
-            coEvery { dogBreedDao.isNotEmpty() } returns false
-            coEvery { dogService.getBreeds() } returns response
-            coEvery { dogService.getImage(any()) } returns Response.success(
-                ImageResult(
-                    "imageUrl",
-                    "success"
-                )
-            )
-            coEvery { dogBreedDao.insertDogBreed(any<DogBreedLocal>()) } returns Unit
-
-            dogRepository.refreshDogBreeds(forceRefresh)
-
-            coVerify(exactly = 1) { dogBreedDao.insertDogBreed(any()) }
-        }
-
-    @Test
     fun `refreshDogBreedImage updates image URL for a breed`() = runTest(dispatcherProvider.io()) {
-        val dogBreed = DogBreed("affenpinscher", "oldImageUrl")
+        val dogBreed = DogBreed("affenpinscher", "")
         val newImageUrl = "newImageUrl"
         val response: Response<ImageResult> = Response.success(ImageResult(newImageUrl, "success"))
-
+        coEvery { dogBreedDao.update(DogBreedLocal(dogBreed.name, newImageUrl)) } returns Unit
         coEvery { dogService.getImage(dogBreed.name) } returns response
-        coEvery { dogBreedDao.update(any()) } returns Unit
+        coEvery { dogBreedDao.getDogBreedsList() } returns listOf(DogBreedLocal(dogBreed.name, ""))
+        coEvery { dogBreedDao.isNotEmpty() } returns true
 
-        dogRepository.refreshDogBreedImage(dogBreed)
+        dogRepository = DogRepositoryImpl(dogService, dogBreedDao, dispatcherProvider)
+        dogRepository.refreshDogBreeds(false)
 
+        coVerify(exactly = 1) { dogService.getImage(dogBreed.name) }
         coVerify(exactly = 1) { dogBreedDao.update(DogBreedLocal(dogBreed.name, newImageUrl)) }
     }
 
@@ -101,7 +85,7 @@ class DogRepositoryImplTest {
         try {
             coEvery { dogService.getBreeds() } throws Exception("Network error")
             coEvery { dogBreedDao.isNotEmpty() } returns false
-            dogRepository.refreshDogBreeds(forceRefresh)
+            dogRepository.refreshDogBreeds(true)
         } catch (e: Exception) {
             Assert.assertTrue(e.message == "Network error")
         }
@@ -125,8 +109,11 @@ class DogRepositoryImplTest {
             val response: Response<DogBreedResponse> = Response.success(dogBreedsResponse)
             coEvery { dogBreedDao.isNotEmpty() } returns false
             coEvery { dogService.getBreeds() } returns response
-
-            dogRepository.refreshDogBreeds(forceRefresh)
+            try {
+                dogRepository.refreshDogBreeds(true)
+            } catch (e: Exception) {
+                assertTrue(e.message == "No breeds found")
+            }
 
             coVerify(exactly = 0) { dogBreedDao.insertDogBreed(any()) }
         }
@@ -151,32 +138,138 @@ class DogRepositoryImplTest {
     }
 
     @Test
-    fun `dogBreeds falls back to local cache on remote fetch failure`() = runTest(dispatcherProvider.io()) {
-        coEvery { dogService.getBreeds() } throws Exception("Network error")
-        // Assume dogBreedsLocal is already populated in setup
-        try {
-            dogRepository.refreshDogBreeds(forceRefresh)
-        } catch (e: Exception) {
-            assertTrue("Expected local cache to be used on remote fetch failure.", true)
-        }
+    fun `dogBreeds falls back to local cache on remote fetch failure`() =
+        runTest(dispatcherProvider.io()) {
+            coEvery { dogService.getBreeds() } throws Exception("Network error")
+            // Assume dogBreedsLocal is already populated in setup
+            try {
+                dogRepository.refreshDogBreeds(true)
+            } catch (e: Exception) {
+                assertTrue("Expected local cache to be used on remote fetch failure.", true)
+            }
 
-        dogRepository.dogBreeds.test {
-            val item = awaitItem()
-            assertFalse("Expected local cache to be used on remote fetch failure.", item.isEmpty())
-            awaitComplete()
+            dogRepository.dogBreeds.test {
+                val item = awaitItem()
+                assertFalse(
+                    "Expected local cache to be used on remote fetch failure.",
+                    item.isEmpty()
+                )
+                awaitComplete()
+            }
         }
-    }
 
     @Test
-    fun `refreshDogBreedImage handles remote fetch failure gracefully`() = runTest(dispatcherProvider.io()) {
-        val dogBreed = DogBreed("affenpinscher", "oldImageUrl")
-        coEvery { dogService.getImage(dogBreed.name) } throws Exception("Network error")
+    fun `refreshDogBreeds fetches from remote on force refresh even if local data exists`() =
+        runTest(dispatcherProvider.io()) {
+            coEvery { dogBreedDao.isNotEmpty() } returns true
+            coEvery { dogService.getBreeds() } returns Response.success(
+                DogBreedResponse(
+                    listOf("breedName"),
+                    "success"
+                )
+            )
+            coEvery { dogBreedDao.getDogBreedsList() } returns listOf(
+                DogBreedLocal(
+                    "breedName",
+                    "imageUrl"
+                )
+            )
 
-        try {
-            dogRepository.refreshDogBreedImage(dogBreed)
-            fail("Expected an exception to be thrown on remote fetch failure.")
-        } catch (e: Exception) {
-            assertEquals("Exception message does not match expected.", e.message, "Network error")
+            dogRepository.refreshDogBreeds(forceRefresh = true)
+
+            coVerify { dogService.getBreeds() }
         }
-    }
+
+    @Test
+    fun `refreshDogBreeds deletes old breeds and inserts new breeds on successful fetch`() =
+        runTest(dispatcherProvider.io()) {
+            val remoteDogBreeds = listOf(DogBreedLocal("newBreed", ""))
+            coEvery { dogBreedDao.isNotEmpty() } returns false
+            coEvery { dogService.getBreeds() } returns Response.success(
+                DogBreedResponse(
+                    listOf("newBreed"),
+                    "success"
+                )
+            )
+
+            dogRepository.refreshDogBreeds(true)
+
+            coVerify(ordering = Ordering.ORDERED) {
+                dogBreedDao.deleteAllDogBreeds()
+                dogBreedDao.insertDogBreeds(remoteDogBreeds)
+            }
+        }
+
+    @Test
+    fun `safelySetImageForBreed continues processing if image fetch fails`() =
+        runTest(dispatcherProvider.io()) {
+            val breedWithoutImage1 = DogBreedLocal("breedWithoutImage1", "")
+            val breedWithoutImage2 = DogBreedLocal("breedWithoutImage2", "")
+            coEvery { dogService.getImage(breedWithoutImage1.name) } throws Exception("Network error")
+            coEvery { dogService.getBreeds() } returns Response.success(
+                DogBreedResponse(
+                    listOf(
+                        breedWithoutImage1.name,
+                        breedWithoutImage2.name
+                    ), "success"
+                )
+            )
+            coEvery { dogBreedDao.isNotEmpty() } returns true
+
+            dogRepository.refreshDogBreeds(true) // Assuming this calls safelySetImageForBreed internally for each breed
+
+            // Verify that it attempted to fetch image for breedWithoutImage2 and continued execution
+            coVerify { dogService.getImage(breedWithoutImage2.name) }
+        }
+
+    @Test
+    fun `refreshDogBreeds does not delete or insert breeds if remote response is empty`() =
+        runTest(dispatcherProvider.io()) {
+            coEvery { dogService.getBreeds() } returns Response.success(
+                DogBreedResponse(
+                    emptyList(),
+                    "success"
+                )
+            )
+            coEvery { dogBreedDao.isNotEmpty() } returns true
+            try {
+                dogRepository.refreshDogBreeds(true)
+            } catch (e: Exception) {
+                assertTrue(e.message == "No breeds found")
+            }
+            coVerify(exactly = 0) { dogBreedDao.deleteAllDogBreeds() }
+            coVerify(exactly = 0) { dogBreedDao.insertDogBreeds(any()) }
+        }
+
+    @Test
+    fun `refreshDogBreeds falls back to local cache on remote fetch failure`() =
+        runTest(dispatcherProvider.io()) {
+            coEvery { dogService.getBreeds() } throws Exception("Network error")
+            // Assuming local cache is not empty for this test
+            coEvery { dogBreedDao.isNotEmpty() } returns false
+            coEvery { dogBreedDao.getDogBreedsFlow() } returns flowOf( listOf(
+                DogBreedLocal(
+                    "cachedBreed",
+                    "cachedImageUrl"
+                )
+            ))
+            dogRepository = DogRepositoryImpl(dogService, dogBreedDao, dispatcherProvider)
+            try {
+                dogRepository.refreshDogBreeds(true)
+            } catch (e: Exception) {
+                assertTrue(e.message == "Network error")
+            }
+
+            dogRepository.dogBreeds.test {
+                val item = awaitItem()
+                assertEquals(
+                    "Expected local cache to be used on remote fetch failure.",
+                    listOf(DogBreed("cachedBreed", "cachedImageUrl")),
+                    item
+                )
+                awaitComplete()
+            }
+        }
+
+
 }

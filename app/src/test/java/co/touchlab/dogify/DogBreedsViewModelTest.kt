@@ -5,7 +5,6 @@ import co.touchlab.dogify.data.DogRepository
 import co.touchlab.dogify.model.DogBreed
 import co.touchlab.dogify.ui.DogBreedsViewModel
 import co.touchlab.dogify.ui.UiState
-import co.touchlab.dogify.ui.UiState.Success
 import io.mockk.Runs
 import io.mockk.coEvery
 import io.mockk.every
@@ -15,6 +14,7 @@ import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -36,7 +36,7 @@ class DogBreedsViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
-        coEvery { mockDogsRepository.refreshDogBreeds(forceRefresh) } just Runs
+        coEvery { mockDogsRepository.refreshDogBreeds(any()) } just Runs
     }
 
     @After
@@ -55,7 +55,10 @@ class DogBreedsViewModelTest {
         viewModel.uiState.test {
             assertEquals(UiState.Idle, awaitItem())
             assertEquals(UiState.Loading, awaitItem())
-            assertEquals(Success(mockData), awaitItem())
+            assertEquals(UiState.Idle, awaitItem())
+        }
+        viewModel.data.test {
+            assertEquals(mockData, awaitItem())
         }
     }
 
@@ -69,11 +72,16 @@ class DogBreedsViewModelTest {
         viewModel = DogBreedsViewModel(mockDogsRepository)
 
         // Assert
+        viewModel.data.test {
+            assertEquals(awaitItem(), emptyList<DogBreed>())
+        }
         viewModel.uiState.test {
             assertEquals(UiState.Idle, awaitItem())
-            assertEquals(UiState.Loading, awaitItem())
             assertEquals(UiState.Error(exception), awaitItem())
+            assertEquals(UiState.Loading, awaitItem())
+            assertEquals(UiState.Idle, awaitItem())
         }
+
     }
 
     @Test
@@ -86,10 +94,12 @@ class DogBreedsViewModelTest {
 
         // Act
         val initialState = viewModel.uiState.value
+        val initialData = viewModel.data.value
         viewModel.refreshDogBreeds() // Attempt to refresh again
 
         // Assert
         assertEquals(initialState, viewModel.uiState.value)
+        assertEquals(initialData, viewModel.data.value)
     }
 
     @Test
@@ -103,20 +113,26 @@ class DogBreedsViewModelTest {
         viewModel.uiState.test {
             assertEquals(UiState.Idle, awaitItem())
             assertEquals(UiState.Loading, awaitItem())
-            assertEquals(Success(emptyList()), awaitItem())
+            assertEquals(UiState.Idle, awaitItem())
+        }
+        viewModel.data.test {
+            assertEquals(emptyList<DogBreed>(), awaitItem())
         }
         // Arrange
         val mockDataAfterRefresh = listOf(DogBreed("Breed3", ""))
-        coEvery { mockDogsRepository.refreshDogBreeds(forceRefresh) } just Runs
+        coEvery { mockDogsRepository.refreshDogBreeds(true) } just Runs
 
         // Act
         viewModel.refreshDogBreeds()
         mockFlow.value = mockDataAfterRefresh
         // Assert
         viewModel.uiState.test {
-            assertEquals(Success(emptyList()), awaitItem())
+            assertEquals(UiState.Idle, awaitItem())
             assertEquals(UiState.Loading, awaitItem())
-            assertEquals(Success(mockDataAfterRefresh), awaitItem())
+            assertEquals(UiState.Idle, awaitItem())
+        }
+        viewModel.data.test {
+            assertEquals(mockDataAfterRefresh, awaitItem())
         }
     }
 }

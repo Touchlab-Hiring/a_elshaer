@@ -16,7 +16,6 @@ import javax.inject.Inject
 interface DogRepository {
     val dogBreeds: Flow<List<DogBreed>>
     suspend fun refreshDogBreeds(forceRefresh: Boolean = false)
-    suspend fun refreshDogBreedImage(dogBreed: DogBreed)
 }
 
 class DogRepositoryImpl @Inject constructor(
@@ -44,6 +43,7 @@ class DogRepositoryImpl @Inject constructor(
     private suspend fun fetchFromRemoteAndStore(): List<DogBreedLocal> {
         return dogService.getBreeds().unwrapResponse().dogBreeds.map { DogBreedLocal(it, "") }
             .also {
+                if (it.isEmpty()) throw Exception("No breeds found")
                 dogBreedDao.deleteAllDogBreeds()
                 dogBreedDao.insertDogBreeds(it)
             }
@@ -53,7 +53,7 @@ class DogRepositoryImpl @Inject constructor(
         runCatching {
             setImageForBreed(breed.toDogBreed())
         }.onFailure { e ->
-            Log.d("DogRepositoryImpl", "Error setting image for breed: ${breed.name}", e)
+            e.printStackTrace()
         }
     }
 
@@ -63,7 +63,5 @@ class DogRepositoryImpl @Inject constructor(
         dogBreedDao.update(DogBreedLocal(dogBreed.name, imageUrl))
     }
 
-    override suspend fun refreshDogBreedImage(dogBreed: DogBreed) = withContext(dispatchers.io()) {
-        setImageForBreed(dogBreed)
-    }
+
 }
