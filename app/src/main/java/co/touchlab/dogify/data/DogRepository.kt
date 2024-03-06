@@ -1,5 +1,6 @@
 package co.touchlab.dogify.data
 
+import android.util.Log
 import co.touchlab.dogify.model.DogBreed
 import co.touchlab.dogify.core.DispatcherProvider
 import co.touchlab.dogify.data.local.database.DogBreedDao
@@ -14,7 +15,7 @@ import javax.inject.Inject
 
 interface DogRepository {
     val dogBreeds: Flow<List<DogBreed>>
-    suspend fun refreshDogBreeds()
+    suspend fun refreshDogBreeds(forceRefresh: Boolean = false)
     suspend fun refreshDogBreedImage(dogBreed: DogBreed)
 }
 
@@ -23,28 +24,46 @@ class DogRepositoryImpl @Inject constructor(
     private val dogBreedDao: DogBreedDao,
     private val dispatchers: DispatcherProvider
 ) : DogRepository {
-    override val dogBreeds: Flow<List<DogBreed>> = dogBreedDao.getDogBreeds()
+
+    override val dogBreeds: Flow<List<DogBreed>> = dogBreedDao.getDogBreedsFlow()
         .map { locals -> locals.map { it.toDogBreed() } }
 
-    override suspend fun refreshDogBreeds() {
-        if (dogBreedDao.isNotEmpty()) return
-        withContext(dispatchers.io()) {
-            val dogBreedsResponse = dogService.getBreeds().unwrapResponse()
-            dogBreedsResponse.dogBreeds.map { breed ->
-                try {
-                    val imageUrl = dogService.getImage(breed).unwrapResponse().url
-                    dogBreedDao.insertDogBreed(DogBreedLocal(breed, imageUrl))
-                } catch (e: Exception) {
-                    dogBreedDao.insertDogBreed(DogBreedLocal(breed, ""))
-                }
-            }
+    override suspend fun refreshDogBreeds(forceRefresh: Boolean) = withContext(dispatchers.io()) {
+        val breeds = getLocalOrRemoteBreeds(forceRefresh)
+        breeds.forEach { breed ->
+            safelySetImageForBreed(breed)
         }
     }
 
-    override suspend fun refreshDogBreedImage(dogBreed: DogBreed) {
-        withContext(dispatchers.io()) {
-            val imageUrl = dogService.getImage(dogBreed.name).unwrapResponse().url
-            dogBreedDao.update(DogBreedLocal(dogBreed.name, imageUrl))
+    private suspend fun getLocalOrRemoteBreeds(forceRefresh: Boolean) = if (dogBreedDao.isNotEmpty() && !forceRefresh) {
+        dogBreedDao.getDogBreedsList()
+    } else {
+        fetchFromRemoteAndStore()
+    }
+
+    private suspend fun fetchFromRemoteAndStore(): List<DogBreedLocal> {
+        return dogService.getBreeds().unwrapResponse().dogBreeds.map { DogBreedLocal(it, "") }
+            .also {
+                dogBreedDao.deleteAllDogBreeds()
+                dogBreedDao.insertDogBreeds(it)
+            }
+    }
+
+    private suspend fun safelySetImageForBreed(breed: DogBreedLocal) {
+        runCatching {
+            setImageForBreed(breed.toDogBreed())
+        }.onFailure { e ->
+            Log.d("DogRepositoryImpl", "Error setting image for breed: ${breed.name}", e)
         }
+    }
+
+    private suspend fun setImageForBreed(dogBreed: DogBreed) {
+        if (dogBreed.imageUrl.isNotBlank()) return
+        val imageUrl = dogService.getImage(dogBreed.name).unwrapResponse().url
+        dogBreedDao.update(DogBreedLocal(dogBreed.name, imageUrl))
+    }
+
+    override suspend fun refreshDogBreedImage(dogBreed: DogBreed) = withContext(dispatchers.io()) {
+        setImageForBreed(dogBreed)
     }
 }

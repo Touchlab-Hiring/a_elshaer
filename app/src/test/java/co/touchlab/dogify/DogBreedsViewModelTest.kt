@@ -15,7 +15,6 @@ import junit.framework.TestCase.assertEquals
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -37,6 +36,7 @@ class DogBreedsViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+        coEvery { mockDogsRepository.refreshDogBreeds(forceRefresh) } just Runs
     }
 
     @After
@@ -107,7 +107,7 @@ class DogBreedsViewModelTest {
         }
         // Arrange
         val mockDataAfterRefresh = listOf(DogBreed("Breed3", ""))
-        coEvery { mockDogsRepository.refreshDogBreeds() } just Runs
+        coEvery { mockDogsRepository.refreshDogBreeds(forceRefresh) } just Runs
 
         // Act
         viewModel.refreshDogBreeds()

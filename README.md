@@ -20,6 +20,12 @@ This project aims to modernize an Android application that displays a list of do
 We're taking this mobile app to the next level by refactoring it with modern practices and architectures, making it more
 efficient and user-friendly.
 
+## 🎯 Features & User Experience
+- ⌛️No boring loading time: Everything is loaded in realtime, we get the dog breeds and show them to the user instantly while the images are being loaded in the background, as soon as we get an image it instantly shown to the user.
+- 🎨Material You Design: supports both dark and light mode.
+- ✨ Every swipe is a new dog: The user can swipeToRefresh to get a new image for every breed, this is a fun way to interact with the app.
+- 🌐Offline first support: once the data is loaded, it's stored in the database and can be accessed even when the user is offline including images.
+
 ## 🏗 Architecture
 
 ### 🌟 MVVM

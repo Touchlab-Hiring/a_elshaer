@@ -45,7 +45,7 @@ class DogRepositoryImplTest {
     @Before
     fun setup() {
         MockKAnnotations.init(this, relaxUnitFun = true)
-        coEvery { dogBreedDao.getDogBreeds() } answers { flowOf(dogBreedsLocal) }
+        coEvery { dogBreedDao.getDogBreedsFlow() } answers { flowOf(dogBreedsLocal) }
         dogRepository = DogRepositoryImpl(dogService, dogBreedDao, dispatcherProvider)
     }
 
@@ -53,7 +53,7 @@ class DogRepositoryImplTest {
     fun `dogBreeds flow emits successfully`() = runTest {
         val dogBreeds = dogBreedsLocal.map { it.toDogBreed() }
 
-        coEvery { dogBreedDao.getDogBreeds() } answers { flowOf(dogBreedsLocal) }
+        coEvery { dogBreedDao.getDogBreedsFlow() } answers { flowOf(dogBreedsLocal) }
 
         dogRepository.dogBreeds.test {
             val item = awaitItem()
@@ -77,7 +77,7 @@ class DogRepositoryImplTest {
             )
             coEvery { dogBreedDao.insertDogBreed(any<DogBreedLocal>()) } returns Unit
 
-            dogRepository.refreshDogBreeds()
+            dogRepository.refreshDogBreeds(forceRefresh)
 
             coVerify(exactly = 1) { dogBreedDao.insertDogBreed(any()) }
         }
@@ -101,7 +101,7 @@ class DogRepositoryImplTest {
         try {
             coEvery { dogService.getBreeds() } throws Exception("Network error")
             coEvery { dogBreedDao.isNotEmpty() } returns false
-            dogRepository.refreshDogBreeds()
+            dogRepository.refreshDogBreeds(forceRefresh)
         } catch (e: Exception) {
             Assert.assertTrue(e.message == "Network error")
         }
@@ -109,7 +109,7 @@ class DogRepositoryImplTest {
 
     @Test
     fun `dogBreeds flow emits empty list when local database is empty`() = runTest {
-        coEvery { dogBreedDao.getDogBreeds() } returns flowOf(emptyList())
+        coEvery { dogBreedDao.getDogBreedsFlow() } returns flowOf(emptyList())
         dogRepository = DogRepositoryImpl(dogService, dogBreedDao, dispatcherProvider)
 
         dogRepository.dogBreeds.test {
@@ -126,7 +126,7 @@ class DogRepositoryImplTest {
             coEvery { dogBreedDao.isNotEmpty() } returns false
             coEvery { dogService.getBreeds() } returns response
 
-            dogRepository.refreshDogBreeds()
+            dogRepository.refreshDogBreeds(forceRefresh)
 
             coVerify(exactly = 0) { dogBreedDao.insertDogBreed(any()) }
         }
@@ -136,7 +136,7 @@ class DogRepositoryImplTest {
         val dogBreedLocalList = listOf(DogBreedLocal("breedName", "imageUrl"))
         val expectedDogBreedList = listOf(DogBreed("breedName", "imageUrl"))
 
-        coEvery { dogBreedDao.getDogBreeds() } returns flowOf(dogBreedLocalList)
+        coEvery { dogBreedDao.getDogBreedsFlow() } returns flowOf(dogBreedLocalList)
         dogRepository = DogRepositoryImpl(dogService, dogBreedDao, dispatcherProvider)
 
         dogRepository.dogBreeds.test {
@@ -155,7 +155,7 @@ class DogRepositoryImplTest {
         coEvery { dogService.getBreeds() } throws Exception("Network error")
         // Assume dogBreedsLocal is already populated in setup
         try {
-            dogRepository.refreshDogBreeds()
+            dogRepository.refreshDogBreeds(forceRefresh)
         } catch (e: Exception) {
             assertTrue("Expected local cache to be used on remote fetch failure.", true)
         }
